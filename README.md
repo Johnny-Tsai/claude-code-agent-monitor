@@ -2,37 +2,50 @@
 
 A Claude Code mod that shows, at a glance, what your session is doing: channel messages still waiting for a reply, tool calls and subagents in flight, external dispatches, cards fed by your own commands, and the session itself.
 
-It is a plugin of function hooks: a one-line band above the prompt, and a `/monitor` side pane.
+It is a plugin of function hooks with two views: a one-line **band** above the prompt, and a **`/monitor` side pane** made of cards. It only observes; it never changes what the session does.
 
-## Features
+- [At a glance](#at-a-glance)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Configuration](#configuration)
+- [The cards](#the-cards)
+- [The `/monitor` command](#the-monitor-command)
+- [Custom cards](#custom-cards)
+- [Dispatch JSONL contract](#dispatch-jsonl-contract)
+- [How it works](#how-it-works)
+- [Design notes](#design-notes)
+- [Known limits](#known-limits)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
-**The band** (always above the prompt):
+## At a glance
+
+### The band
+
+The band sits above the prompt in every session that loads the mod.
 
 ```text
+Pane closed:
  ● INBOX 3  discord #general 18m +1ch  │  ● NOW  Bash "build" 12m +1  │  ● restart soon  │  no reply yet
+Pane open (only what is past a threshold):
+ ● INBOX 3  discord #general 18m +1ch  │  ● NOW  Bash "build" 12m +1  │  ● restart soon
+Nothing going on:
+ · INBOX 0  │  · NOW idle  │  no reply yet
 ```
 
-- `INBOX`: channel messages (for example from a Discord channel plugin) that have not been answered yet, the oldest one's channel and wait time, and how many other channels are waiting.
-- `NOW`: the oldest tool call or background subagent still running, and how long it has run.
-- `restart soon` / `restart now`: shown only when context usage passes the warning or critical line.
-- The time since the last reply.
-
-While the pane is open, the band keeps only what is past a threshold (or disappears), because the pane already shows the rest. When the line is too narrow, segments drop from the right; `INBOX` always stays.
-
-**The `/monitor` pane**, one card per topic, each expandable and collapsible:
-
-| Card | Shows |
+| Segment | Shows |
 | --- | --- |
-| header | clock, counts (inbox, now, agents), time since the last reply, restart warning |
-| `INBOX` | waiting messages grouped by channel, with wait times |
-| `RUNNING` | tool calls in flight and background subagents |
-| `DISPATCHES` | external dispatches read from your `dispatchCommand`: running, stalled, recently ended (only when `dispatchCommand` is set) |
-| custom cards | one card per `customCards` entry, filled from your own read-only command |
-| `SESSION` | up time, the last wake prompt, number of compactions |
+| `INBOX` | Channel messages not answered yet, the oldest one's channel and wait time, and `+Nch` for other channels that are waiting. |
+| `NOW` | The oldest tool call or background subagent still running, how long it has run, and `+N` for the others. |
+| `restart soon` / `restart now` | Only when context usage passes `contextWarnPercent` / `contextCriticalPercent`. |
+| last reply | `no reply yet`, `replied just now` or `replied 4m ago`. |
 
-Status marks are shared by both views: `●` running (green), `◌` stalled (yellow), `✓` done, `✗` failed or rejected (red), `–` cancelled, `·` idle or waiting.
+With the pane closed the band shows all four segments. With the pane open it keeps only segments past a threshold (a message waiting too long, an action running too long, a restart warning), and draws nothing at all when there are none, so the two views do not repeat each other. When the line is too narrow, segments drop from the right; `INBOX` always stays.
 
-### Sample (60 columns, neutral sample data)
+### The pane
+
+Type `/monitor` to open or close the pane. This sample is plain text printed by the test suite at 60 columns, with neutral sample data; `WAITING ON YOU` and `SCHEDULE` are custom cards, and `SCHEDULE` and `SESSION` are collapsed to a one-line summary.
 
 ```text
 ╭──────────────────────────────────────────────────────────╮
@@ -73,12 +86,11 @@ Status marks are shared by both views: `●` running (green), `◌` stalled (yel
  updated 12:08 · refresh 60s
 ```
 
-`WAITING ON YOU` and `SCHEDULE` are custom cards; `SCHEDULE` and `SESSION` are collapsed and show their one-line summary. The test suite prints samples like this at 48 and 60 columns (`claude plugin test .`).
-
 ## Requirements
 
 - Claude Code with function-hook plugins (mods). Tested with **Claude Code 2.1.289**; no older minimum version has been verified.
 - The function-hooks API is marked early access by Claude Code and may change between releases.
+- Nothing else. The mod has no dependencies and runs inside Claude Code's own hooks environment.
 
 ## Install
 
@@ -98,11 +110,11 @@ Clone the repository anywhere, then pick one of these:
 
 3. **Skills folder**: place the folder at `~/.claude/skills/agent-monitor/`; Claude Code auto-loads it in the next session as `agent-monitor@skills-dir`.
 
-Then type `/monitor` to open the pane. In a terminal, a pane opened by a command is seated at any width; a pane opened unasked (`openOnStart`) waits until the terminal is at least 144 columns wide.
+Then type `/monitor`. With the default options the mod runs no external command: you get the band, `INBOX`, `RUNNING` and `SESSION`. Set `dispatchCommand` or `customCards` to add the other cards.
 
 ## Configuration
 
-Options are the plugin's `userConfig` fields. Each one appears as a row in Claude Code's config menu, and is stored in settings under `pluginConfigs`, keyed by the plugin's name (`agent-monitor`, or `agent-monitor@inline`), in its `options` object. A change in the config menu reloads the mod with the new values. Every default works out of the box: no command runs until you configure one.
+Options are the plugin's `userConfig` fields. Each one appears as a row in Claude Code's config menu, and is stored in settings under `pluginConfigs`, keyed by the plugin's name (`agent-monitor`, or `agent-monitor@inline`), in its `options` object. A change in the config menu reloads the mod with the new values.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -112,16 +124,18 @@ Options are the plugin's `userConfig` fields. Each one appears as a row in Claud
 | `longActionMinutes` | `10` | A tool call running this long is shown in the warning color. Clamped to 0 to 1440. |
 | `contextWarnPercent` | `70` | Context usage at or above this shows `restart soon` and one toast each time it is crossed. Clamped to 1 to 100. |
 | `contextCriticalPercent` | `85` | Context usage at or above this shows `restart now` in the error color. Never below `contextWarnPercent`. |
-| `dispatchCommand` | `""` | A read-only command that prints dispatch events as JSONL (see below). `{since24h}` is replaced with an RFC 3339 time 24 hours ago. Empty hides the `DISPATCHES` card and runs nothing. |
+| `dispatchCommand` | `""` | A read-only command that prints dispatch events as JSONL (see [Dispatch JSONL contract](#dispatch-jsonl-contract)). `{since24h}` is replaced with an RFC 3339 time 24 hours ago. Empty hides the `DISPATCHES` card and runs nothing. |
 | `dispatchCommandPattern` | `""` | A regular expression; a Bash call whose command matches it is labelled `dispatch -> <runtime>` (runtime taken from `--runtime <x>`), and the dispatches are re-read 5 s after it starts. Empty recognises nothing. |
 | `runtimeNames` | `""` | Display names for runtime ids, as `id=name` pairs separated by commas (e.g. `codex-cli=Codex`). Empty shows the runtime id. |
 | `timeZone` | `""` | IANA time zone for clock times in the pane (e.g. `Europe/Berlin`). Empty uses UTC. |
-| `customCards` | `""` | Extra cards as `TITLE=command` pairs separated by `;;` (see below). Empty adds no cards. |
+| `customCards` | `""` | Extra cards as `TITLE=command` pairs separated by `;;` (see [Custom cards](#custom-cards)). Empty adds no cards. |
 | `openOnStart` | `false` | Open the monitor pane when a session starts. |
 | `wakePattern` | `""` | A regular expression marking prompts that woke the session (shown in `SESSION`). Empty counts scheduled and loop triggers. |
-| `collapsedCards` | `"session"` | Comma-separated card ids collapsed until you expand them: `inbox`, `running`, `dispatches`, `session`, and each custom card's title in lower case with dashes. |
+| `collapsedCards` | `"session"` | Comma-separated card ids collapsed until you expand them: `inbox`, `running`, `dispatches`, `session`, and each custom card's id. |
 | `customCardMaxItems` | `5` | Most items an expanded custom card lists; the rest fold into one `+N more` line. Clamped to 1 to 100. |
-| `paneMaxRows` | `44` | Rows the pane may use when the surface does not report its height. Past it, expanded cards are shortened first so every card title stays visible. Clamped to 10 to 500. |
+| `paneMaxRows` | `44` | Rows the pane may use when the surface does not report its height. Clamped to 10 to 500. |
+
+Numbers outside their range are clamped rather than rejected. A regular expression that does not compile is matched as plain text instead, so a typo never stops the mod from loading.
 
 Example `~/.claude/settings.json` fragment:
 
@@ -132,6 +146,7 @@ Example `~/.claude/settings.json` fragment:
       "options": {
         "channelNames": "123456=general,987654=ops",
         "timeZone": "Europe/Berlin",
+        "openOnStart": true,
         "customCards": "TODO=python3 /path/to/todo.py;;BUILDS=/path/to/builds --json",
         "collapsedCards": "session,builds"
       }
@@ -140,22 +155,71 @@ Example `~/.claude/settings.json` fragment:
 }
 ```
 
+## The cards
+
+Cards appear top to bottom in this order. The id is the name the `/monitor` command and `collapsedCards` use.
+
+| Card | Id | Default |
+| --- | --- | --- |
+| header | none | always shown, cannot be hidden |
+| `INBOX` | `inbox` | expanded |
+| `RUNNING` | `running` | expanded |
+| `DISPATCHES` | `dispatches` | expanded; only when `dispatchCommand` is set |
+| custom cards | the title in lower case, other characters as dashes (`WAITING ON YOU` is `waiting-on-you`) | expanded unless listed in `collapsedCards` |
+| `SESSION` | `session` | collapsed |
+
+Every card has a title row with a toggle (`-` expanded, `+` collapsed) and a badge on the right. Expanded, it lists its items; collapsed, it keeps one summary row. Where the terminal supports it, the title row is a button that toggles the card.
+
+**Header.** The clock (in `timeZone`), an overview line (`inbox N · now N · agents N` and the time since the last reply) and, past the context warning line, `restart soon` or `restart now`.
+
+**INBOX.** Messages delivered by any channel server (for example a Discord channel plugin) that have not been answered, one row per channel with the count (`x2`) and the oldest wait time. A message waiting longer than `waitingAlertMinutes` turns the row to the warning color and shows one toast. A reply clears messages when a reply tool succeeds on the same server, and on the same chat when the reply names a `chat_id`; reactions and edits do not count. The same message delivered twice is counted once.
+
+**RUNNING.** Every tool call in flight and every background subagent still running, oldest first, with elapsed time. Labels: Bash shows its description; a Bash call matching `dispatchCommandPattern` shows `dispatch -> <runtime>`; the Agent tool shows `agent <description>`; MCP tools show their short name. Inside a subagent only dispatches are tracked; the rest is covered by the subagent's own row. Anything past `longActionMinutes` turns to the warning color.
+
+**DISPATCHES.** Work you hand to other agents or tools outside this session, read from `dispatchCommand`. The badge reads `N running · M stalled`. Running dispatches come first (runtime, short id, start time, age, summary); dispatches stalled within the last hour are listed one by one, and older stalled ones fold into one `◌ N stalled since HH:MM` line; below `recent`, the last 3 ended dispatches (change with `/monitor rows dispatches <n>`). A command that fails shows a one-line reason in the card.
+
+**Custom cards.** One card per `customCards` entry, filled from your own command's JSON. The badge is the item count, plus `N failed` in red when any item failed. See [Custom cards](#custom-cards).
+
+**SESSION.** When the session started and how long it has been up, the last wake (time and the first 30 characters of the prompt that woke it), and how many times the conversation was compacted and when. Collapsed, it reads `up 8m · woke never · compacted 0`. These figures survive a hot reload.
+
+**Footer.** `updated HH:MM · refresh 60s` says when the cards' data was last read, followed by the ids of hidden cards when there are any.
+
+### Status marks
+
+Both views take their marks and colors from one table, so they always agree.
+
+| Mark | Meaning | Color |
+| --- | --- | --- |
+| `●` | running, or a severity dot for waiting messages and actions | green; yellow or red past a threshold |
+| `◌` | stalled: no end event and no start or heartbeat for 3 minutes | yellow |
+| `✓` | done | dim |
+| `✗` | failed or rejected | red |
+| `–` | cancelled | dim |
+| `·` | idle, waiting, or nothing to show | dim |
+
 ## The `/monitor` command
 
-```text
-/monitor                              toggle the pane
-/monitor expand <card|all>            expand cards
-/monitor collapse <card|all>          collapse cards
-/monitor hide <card>                  hide a card (the header card always stays)
-/monitor show <card|all>              show hidden cards again
-/monitor rows <card> <1-30|default>   how many items an expanded card lists
-```
+| Command | Effect |
+| --- | --- |
+| `/monitor` | Open or close the pane. |
+| `/monitor expand <card\|all>` | Show the card's items. |
+| `/monitor collapse <card\|all>` | Shrink the card to its title and one summary row. |
+| `/monitor hide <card>` | Remove the card from the pane, one card at a time; hidden ids are listed above the footer. `hide all` is refused and the header always stays. |
+| `/monitor show <card\|all>` | Put hidden cards back. |
+| `/monitor rows <card> <1-30\|default>` | How many items the expanded card lists before `+N more`; for `dispatches`, how many recently ended dispatches are listed. `default` restores the configured value. |
 
-Card names ignore case, accept spaces for dashes (`waiting on you`) and unique prefixes (`wait`). An ambiguous prefix lists the candidates; a typo gets a suggestion. Expanded, hidden and row settings are remembered across sessions. The title of each card is also a button that toggles it.
+Card names are forgiving:
+
+- Case does not matter, and spaces stand for dashes: `/monitor rows Waiting On You 8` works.
+- A unique prefix is enough: `/monitor rows wait 6`, `/monitor expand sch`.
+- An ambiguous prefix lists the candidates: `"s" matches schedule, session; type more of the name.`
+- A typo lists every card and suggests the nearest one: `No card named "dispach". Did you mean dispatches? Cards: inbox, running, dispatches, ...`
+
+Expanded, hidden and row settings are kept in the mod's store, so the next session starts the way you left it. The command's argument hint lists every subcommand and every card id for the current configuration.
 
 ## Custom cards
 
-`customCards` holds `TITLE=command` pairs separated by `;;`. Each command is split into arguments like a shell would for plain words and quotes, but **runs without a shell** (no pipes, globbing or variable expansion), with a 10 second timeout, when the pane opens and every 60 seconds while it is open. It must print one JSON object:
+`customCards` holds `TITLE=command` pairs separated by `;;`, for example `TODO=python3 /path/to/todo.py;;BUILDS=/path/to/builds --json`. Each command is split into arguments like a shell would for plain words and quotes, but **runs without a shell** (no pipes, globbing or variable expansion; wrap anything more in a script), with a 10 second timeout, when the pane opens and every 60 seconds while it is open. It must print one JSON object:
 
 ```json
 {
@@ -169,14 +233,14 @@ Card names ignore case, accept spaces for dashes (`waiting on you`) and unique p
 ```
 
 - `mark` is one of `running`, `stalled`, `done`, `failed`, `idle`, `waiting`, `warn`; anything else shows as `idle`.
-- `text` is cut to 80 characters, `right` to 12, `summary` to 80, `empty` to 60. At most 30 items are read.
-- Output that is not a JSON object, or a command that fails, shows `could not read: <reason>` in the card; nothing throws.
-
-The card id is the title in lower case with other characters as dashes (`WAITING ON YOU` is `waiting-on-you`).
+- `text` and `summary` are cut to 80 characters, `right` to 12, `empty` to 60. At most 30 items are read.
+- When a card shows fewer items than it has, `failed`, `warn` and `stalled` items are listed first; the rest keep the command's order.
+- Text is shown as given, in any language; the mod does not translate it.
+- Output that is not a JSON object, or a command that fails or times out, shows `could not read: <reason>` in the card; nothing throws.
 
 ## Dispatch JSONL contract
 
-`dispatchCommand` is for work you hand to other agents or tools outside this session. It runs without a shell, with a 20 second timeout, when the pane opens, every 60 seconds while it is open, and 5 seconds after a Bash call matching `dispatchCommandPattern` starts (timed reads happen only while the pane is open). It prints one JSON object per line:
+`dispatchCommand` runs without a shell, with a 20 second timeout, when the pane opens, every 60 seconds while it is open, 5 seconds after a Bash call matching `dispatchCommandPattern` starts, and again when that call ends. It prints one JSON object per line:
 
 ```json
 {"event_type":"DispatchStarted","timestamp":"2026-10-05T03:46:00Z","payload":{"dispatch_id":"a1b2c3d4-0001","runtime_id":"alpha-cli","task_id":"T-108 parser"}}
@@ -186,29 +250,122 @@ The card id is the title in lower case with other characters as dashes (`WAITING
 
 - `event_type`: `DispatchStarted`, `DispatchHeartbeat`, `DispatchCompleted`, `DispatchFailed`, `DispatchCancelled` or `DispatchRejected`.
 - `timestamp`: RFC 3339.
-- `payload.dispatch_id`: required; events are paired by it, and the first 8 characters are shown.
+- `payload.dispatch_id`: required; events are paired by it, and its first 8 characters are shown.
 - `payload.runtime_id` (or `payload.runtime`): optional, mapped through `runtimeNames`.
-- The summary is the first of `prompt_summary`, `summary`, `title`, `task_name`, `task`, `task_id` that is present, cut to 30 characters.
-- Other fields are ignored. One unreadable line fails the whole read (shown as a one-line reason) rather than pairing half of it.
-- A dispatch with no end event and no start or heartbeat in the last 3 minutes is **stalled**. Stalled dispatches older than 60 minutes fold into one line; the most recently ended ones are listed after the running ones.
+- The summary is the first of `prompt_summary`, `summary`, `title`, `task_name`, `task`, `task_id` that has a value, cut to 30 characters.
+- Other fields are ignored. One unreadable line fails the whole read (shown as a one-line reason) rather than pairing half of it; output too large to read whole is a failure too.
+- An end event decides the state. With no end event, a dispatch whose last start or heartbeat is more than 3 minutes old is **stalled**; send a heartbeat more often than that (for example every 30 seconds) while work is running.
 
-## Design principles
+## How it works
 
-- **Read-only.** Every hook passes its event on unchanged; the mod never blocks, rewrites or answers a tool call or prompt. Its own errors go to the debug log, so a failure in the mod never reaches your session.
-- **No external commands by default.** Only `dispatchCommand` and `customCards` run anything, both empty by default, both without a shell and with a timeout.
-- **Safe glyphs.** Every non-ASCII character either view may draw is in one whitelist (`●✓✗◌–·│─┊╭╮╰╯`), enforced by a test, so terminal fonts without wider symbol coverage still render it. The mod's own text is ASCII; only text from your channels or commands may contain other characters.
-- **One model, two views.** The band and the pane read the same model, so their counts, marks and colors always agree.
-- **Fits narrow panes.** Tested at 48 and 60 columns without overflow, and within 44 rows with every card title still visible.
+### One model, two views
 
-## Development
+Every figure and every threshold is computed once, in `buildModel()` (`hooks/model.ts`). The band (`hooks/view.ts`) and the pane (`hooks/pane.ts`) only lay that model out, and both take marks and colors from the same table, so their numbers and symbols cannot disagree. A test feeds one input to both and compares them.
 
-```sh
-claude plugin validate .            # manifest and hooks module, as the engine reads them
-claude plugin test .                # runs tests/*.test.ts against the engine
-npx -y -p typescript@5.9.3 tsc -p . --noEmit
+```mermaid
+flowchart LR
+  subgraph SRC["Event sources"]
+    A["Channel messages<br/>prompt.submit, session.append"]
+    B["Tool calls<br/>tool.call"]
+    C["Context usage<br/>session.measure"]
+    D["Compactions<br/>session.compact"]
+    E["External commands<br/>dispatchCommand, customCards"]
+    F["Background subagents<br/>agent.list"]
+  end
+  subgraph ST["State"]
+    STATE["Session state<br/>$.state"]
+    STORE["Store across sessions<br/>expanded, hidden, rows, session info"]
+  end
+  T1["Every 30 s"] --> STATE
+  T2["Every 60 s while the pane is open"] --> E
+  T2 --> F
+  A --> STATE
+  B --> STATE
+  C --> STATE
+  D --> STATE
+  E --> STATE
+  F --> STATE
+  STATE <-->|"save and restore"| STORE
+  STATE --> M["buildModel<br/>all figures and thresholds"]
+  M --> V1["Band<br/>AbovePrompt"]
+  M --> V2["Pane<br/>/monitor"]
+  STATE -->|"expanded, hidden, rows"| L["layoutPane<br/>fits the pane height"]
+  V2 --> L
 ```
 
-The type declarations the hooks import (`claude-code`, `claude-code/testing`) are written by Claude Code into `.claude-plugin/types/` the first time it loads the mod from a folder you own (for example with `claude --plugin-dir .`), and again after an update. That folder is not committed; load the mod once before running `tsc`. `tsconfig.json` includes it, so no other setup is needed.
+### Observe only
+
+The mod hooks these events. Apart from `/monitor` and its own two drawings, every hook passes the event on unchanged with `next(e)`; it never blocks, rewrites or answers a tool call or a prompt. Its own errors go to the debug log, so a failure inside the mod never reaches your session.
+
+| Event | What the mod does |
+| --- | --- |
+| `session.start` | Clears the in-flight list, restores stored settings, registers `/monitor`, starts the timers, and opens the pane when `openOnStart` is set. |
+| `prompt.submit`, `session.append` | Records channel messages from their `<channel ...>` tags, each message once; marks prompts that woke the session. |
+| `tool.call` | Wraps each call: registers it at the start and removes it at the end; after a successful reply tool, clears that channel's messages and notes the reply time; re-reads dispatches around a dispatch command. |
+| `session.compact` | Counts compactions of the main conversation (precomputed and skipped ones do not count). |
+| `session.measure` | Reads context usage for the restart warning only, with one toast each time the warning line is crossed. |
+| `command.run` | Answers `/monitor` and its subcommands. |
+| `ui.close` | Redraws the band when the pane closes, so it returns to its full form. |
+| `ui.render` | Draws the band (`AbovePrompt`) and the pane (`Pane`). |
+
+### Refresh and timing
+
+- A 30 second tick updates elapsed times and checks the waiting threshold.
+- While the pane is open, `dispatchCommand`, the custom card commands and the subagent list are read when it opens and every 60 seconds. With the pane closed, no external command runs.
+- A refresh that has not finished after 45 seconds no longer blocks the next one, so one hung command cannot freeze the pane.
+- The footer shows when the data was last read. After 150 seconds without a successful read (two missed refreshes), it turns to the warning color and says how old the data is: `updated 12:02 (stale, 4m old) · refresh 60s`.
+
+### Fitting the pane height
+
+The pane uses the height the terminal reports, or `paneMaxRows` when it reports none. Collapsed cards always take their title and one summary row. When the cards do not fit, the longest expanded card is shortened one row at a time (down to a single `+N more` row) until everything fits; only then is the footer dropped. As long as the height leaves room for each card's frame and title, every card title stays on screen (tested at 30 and 44 rows).
+
+## Design notes
+
+- **Context usage is left to Claude Code's status line.** Claude Code already shows context usage. Showing the same percentage again in the band and the pane only repeated one number in several places, so the mod shows a context figure only when it calls for action: `restart soon` past `contextWarnPercent`, `restart now` past `contextCriticalPercent`.
+- **A glyph whitelist.** Some terminal fonts cannot draw every Unicode symbol and show a box instead (gauge blocks and refresh arrows are common offenders). Every non-ASCII character either view may draw is in one whitelist, `●✓✗◌–·│─┊╭╮╰╯`, and a test scans every drawn line against it. Card toggles are the ASCII `+` and `-`. The mod's own text is ASCII; only text from your channels or commands may contain other characters.
+- **No external commands by default.** Only `dispatchCommand` and `customCards` run anything. Both are empty by default, both run without a shell, with a timeout, and only while the pane is open. A fresh install observes and draws; it does not execute.
+- **One model, two views.** Figures are computed in one place, so the band and the pane never disagree.
+- **Built for narrow panes.** Tested at 48 and 60 columns without overflow, and within 44 rows with every card title visible.
+
+## Known limits
+
+- Dispatches are read for the last 24 hours only.
+- Stalled means no heartbeat for 3 minutes; a dispatch system that stops sending heartbeats while work still runs will show as stalled.
+- Background subagents are only as current as Claude Code's subagent list, read when the pane refreshes.
+- The waiting threshold can change color up to 30 seconds late; dispatch and custom card data can be up to 60 seconds old.
+- A hot reload or a new session clears the in-flight list; actions that started before the reload are not shown in `RUNNING`.
+
+## Troubleshooting
+
+**The pane does not appear.** A pane you open with `/monitor` is seated at any terminal width. A pane opened unasked, by `openOnStart`, is seated only once the terminal is at least 144 columns wide, and waits until then; widen the terminal or type `/monitor`.
+
+**I see two bands.** Check whether the mod is loaded twice, for example from both a `--plugin-dir` folder and `CLAUDE_CODE_PLUGIN_DIRS` or the skills folder. Load one copy.
+
+**The footer says `stale`.** The cards' data has not been read successfully for over 150 seconds, usually because `dispatchCommand` or a custom card command hangs or keeps failing. Run the command yourself and check that it prints its JSON within the timeout (20 s for dispatches, 10 s for custom cards).
+
+**A card says `could not read: ...`.** The command failed, timed out, or printed something other than the expected JSON. The reason after `could not read:` is the first line of the error. Remember the command runs without a shell: pipes and `$VARS` are passed literally.
+
+**`DISPATCHES` does not appear.** It is shown only when `dispatchCommand` is set. If it shows everything as stalled, check that your events carry `payload.dispatch_id` and that heartbeats arrive more often than every 3 minutes.
+
+**Messages stay in `INBOX` after I replied.** By default only MCP tools whose names end in `__reply` or `__voice_reply` count as replies, on the same server as the message. List your reply tools in `replyTools` if they are named otherwise.
+
+**Hook errors.** The mod logs its own errors to the debug log (`claude --debug`) as `agent-monitor <where>: <reason>`.
+
+## Contributing
+
+Issues and pull requests are welcome. Keep changes in line with the design notes: observe only, no external commands unless configured, ASCII text plus the glyph whitelist.
+
+```sh
+claude plugin validate .                         # manifest and hooks module, as the engine reads them
+claude plugin test .                             # runs tests/*.test.ts against the engine
+npx -y -p typescript@5.9.3 tsc -p . --noEmit     # type check
+```
+
+`claude plugin test` also prints sample panes at 48 and 60 columns, which is the quickest way to see a layout change.
+
+The type declarations the hooks import (`claude-code`, `claude-code/testing`) are written by Claude Code into `.claude-plugin/types/` the first time it loads the mod from a folder you own (for example with `claude --plugin-dir .`), and again after an update. That folder is not committed; load the mod once before running `tsc`. `tsconfig.json` already includes it.
+
+Every behavior change needs a test. The suites cover the band, the pane, card arrangement, dispatch parsing and the pure logic; `tests/kit.ts` holds the shared engine stand-ins and a plain-text renderer.
 
 Layout:
 
@@ -218,7 +375,8 @@ hooks/hooks.json             names the hooks module
 hooks/register.tsx           the hooks: events, timers, /monitor
 hooks/config.ts              option parsing and card name matching
 hooks/model.ts               the one model both views read
-hooks/view.ts, hooks/pane.ts the band and the pane
+hooks/view.ts                the band and the shared mark table
+hooks/pane.ts                the pane's cards and height fitting
 hooks/dispatch.ts            dispatch JSONL parsing and pairing
 hooks/custom.ts              custom card JSON parsing
 hooks/logic.ts               channel, reply and subagent tracking
