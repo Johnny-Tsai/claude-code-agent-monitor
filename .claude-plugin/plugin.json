@@ -1,0 +1,109 @@
+{
+  "name": "agent-monitor",
+  "version": "0.3.1",
+  "description": "A side pane (and a band above the prompt) tracking channel messages waiting for a reply, running tool calls and subagents, external dispatches, custom cards from your own commands, and the session itself.",
+  "author": {
+    "name": "NeriakTo"
+  },
+  "license": "MIT",
+  "keywords": ["claude-code-mod", "monitor", "pane", "dispatch"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "channelNames": {
+      "type": "string",
+      "title": "Channel names",
+      "description": "Display names for channel ids, as id=name pairs separated by commas (e.g. 123456=general,987654=ops). Empty shows <server> #<last 4 digits of the id>.",
+      "default": ""
+    },
+    "replyTools": {
+      "type": "string",
+      "title": "Reply tools",
+      "description": "Comma-separated tool names that count as replying to a channel. Empty means any MCP tool whose name ends in __reply or __voice_reply, matched to its own server.",
+      "default": ""
+    },
+    "waitingAlertMinutes": {
+      "type": "number",
+      "title": "Waiting alert (minutes)",
+      "description": "A message waiting this long without a reply turns the Inbox segment to the warning color and shows one toast.",
+      "default": 5
+    },
+    "longActionMinutes": {
+      "type": "number",
+      "title": "Long action (minutes)",
+      "description": "A tool call running this long is shown in the warning color.",
+      "default": 10
+    },
+    "contextWarnPercent": {
+      "type": "number",
+      "title": "Context warning (%)",
+      "description": "Context usage at or above this suggests a restart and shows one toast each time it is crossed.",
+      "default": 70
+    },
+    "contextCriticalPercent": {
+      "type": "number",
+      "title": "Context critical (%)",
+      "description": "Context usage at or above this is shown in the error color.",
+      "default": 85
+    },
+    "dispatchCommand": {
+      "type": "string",
+      "title": "Dispatch event command",
+      "description": "A read-only command that prints dispatch events as JSONL, one event per line with event_type (DispatchStarted, DispatchHeartbeat, DispatchCompleted, DispatchFailed, DispatchCancelled, DispatchRejected), timestamp and a payload carrying dispatch_id. {since24h} is replaced with an RFC3339 time 24 hours ago. Empty hides the Dispatches section and runs nothing.",
+      "default": ""
+    },
+    "dispatchCommandPattern": {
+      "type": "string",
+      "title": "Dispatch command pattern",
+      "description": "A regular expression; a Bash call whose command matches it is labelled dispatch -> <runtime>, the runtime taken from --runtime <x>. Empty recognises nothing.",
+      "default": ""
+    },
+    "runtimeNames": {
+      "type": "string",
+      "title": "Runtime names",
+      "description": "Display names for runtime ids, as id=name pairs separated by commas (e.g. codex-cli=Codex). Empty shows the runtime id.",
+      "default": ""
+    },
+    "timeZone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "IANA time zone for clock times in the pane (e.g. Europe/Berlin). Empty uses UTC.",
+      "default": ""
+    },
+    "customCards": {
+      "type": "string",
+      "title": "Custom cards",
+      "description": "Extra cards as TITLE=command pairs separated by ;; (the command runs without a shell, read-only, 10 s timeout). It prints one JSON object: {\"summary\": \"one line\", \"items\": [{\"mark\": \"running|stalled|done|failed|idle|waiting|warn\", \"text\": \"...\", \"right\": \"...\"}], \"empty\": \"text when there are no items\"}. Empty adds no cards.",
+      "default": ""
+    },
+    "openOnStart": {
+      "type": "boolean",
+      "title": "Open on start",
+      "description": "Open the monitor pane when a session starts (the terminal seats it once it is wide enough).",
+      "default": false
+    },
+    "wakePattern": {
+      "type": "string",
+      "title": "Wake pattern",
+      "description": "A regular expression marking prompts that woke the session (shown in the SESSION card). Empty counts scheduled and loop triggers.",
+      "default": ""
+    },
+    "collapsedCards": {
+      "type": "string",
+      "title": "Collapsed by default",
+      "description": "Comma-separated card ids collapsed until you expand them (ids: inbox, running, dispatches, session, and each custom card's title in lower case with dashes).",
+      "default": "session"
+    },
+    "customCardMaxItems": {
+      "type": "number",
+      "title": "Custom card items",
+      "description": "Most items an expanded custom card lists; the rest fold into one +N more line.",
+      "default": 5
+    },
+    "paneMaxRows": {
+      "type": "number",
+      "title": "Pane height (rows)",
+      "description": "Rows the pane may use when the surface does not report its height. Past it, expanded cards are shortened first so every card's title stays visible.",
+      "default": 44
+    }
+  }
+}

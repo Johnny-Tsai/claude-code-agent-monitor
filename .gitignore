@@ -1,0 +1,9 @@
+# Written by Claude Code when it loads the mod; never committed.
+.claude-plugin/types/
+
+# Dependencies, caches and local files
+node_modules/
+*.tsbuildinfo
+.DS_Store
+REPORT.md
+.env*
