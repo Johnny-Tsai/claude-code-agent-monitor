@@ -31,7 +31,6 @@ import type { Line } from './view'
 
 const PANE = 'agent-monitor'
 const TICK_MS = 30_000
-const PANE_REFRESH_MS = 60_000
 const COMMAND_TIMEOUT_MS = 20_000
 
 const pendingA = atom({ plugin: 'agent-monitor', key: 'pending' } as const, [] as Pending[])
@@ -372,7 +371,7 @@ export const register: Register = (on, options) => {
     }
     try {
       $.clock.every(TICK_MS, () => void onTick($, cfg))
-      $.clock.every(PANE_REFRESH_MS, () => void onPaneTimer($, cfg))
+      $.clock.every(cfg.paneRefreshMs, () => void onPaneTimer($, cfg))
       if (cfg.openOnStart && !(await isPaneOpen($))) {
         await $.ui.open({ id: PANE, title: 'Agent monitor' })
         void refreshPane($, cfg)
@@ -537,6 +536,7 @@ export const register: Register = (on, options) => {
       const model = await readModel($, cfg)
       const expanded = await read($, expandedA)
       const doc = paneDoc(model, e.props.bodyColumns, cfg.timeZone, {
+        refreshMs: cfg.paneRefreshMs,
         customMaxItems: cfg.customCardMaxItems,
         rows: await read($, rowsA),
         hidden: await read($, hiddenA),

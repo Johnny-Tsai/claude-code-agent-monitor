@@ -12,7 +12,13 @@ export type Card = { id: string; title: string; badge: Line; summary: Line; line
 export type PaneDoc = { head: Line[]; cards: Card[]; footer: Line[] }
 
 /** What the person set with /monitor: hidden cards and per-card item limits. */
-export type PaneOptions = { customMaxItems: number; rows: Readonly<Record<string, number>>; hidden: readonly string[] }
+export type PaneOptions = {
+  customMaxItems: number
+  rows: Readonly<Record<string, number>>
+  hidden: readonly string[]
+  /** The pane's refresh period, for the footer; 60 s when absent. */
+  refreshMs?: number
+}
 
 /** The badge: a gray count, and a red `· N failed` when the card holds failed items. */
 export const badgeOf = (n: number, failed: number, tone: Tone = 'muted'): Line =>
@@ -265,7 +271,7 @@ const sessionCard = (m: Model, inner: number, timeZone: string): Card => {
 const STALE_DATA_MS = 150_000
 
 /** When the cards' data was last read (not when the pane was drawn), flagged once it is stale. */
-const footer = (m: Model, timeZone: string): Line => {
+const footer = (m: Model, timeZone: string, refreshMs = 60_000): Line => {
   const reads = [m.dispatches.isEnabled ? m.dispatches.fetchedAt : null, ...m.custom.map(c => c.fetchedAt)].filter(
     (t): t is number => t !== null,
   )
@@ -274,7 +280,7 @@ const footer = (m: Model, timeZone: string): Line => {
   return [
     { text: `updated ${at === null ? clockTime(m.now, timeZone) : clockTime(at, timeZone)}`, tone: isStale ? 'warn' : 'muted' },
     ...(isStale ? [{ text: ` (stale, ${duration(m.now - at)} old)`, tone: 'warn' as Tone }] : []),
-    { text: ' · refresh 60s', tone: 'muted' },
+    { text: ` · refresh ${Math.round(refreshMs / 1000)}s`, tone: 'muted' },
   ]
 }
 
@@ -296,7 +302,7 @@ export const paneDoc = (m: Model, bodyColumns: number, timeZone: string, opts: P
     cards: all.filter(card => !hidden.includes(card.id)),
     footer: [
       ...(hidden.length > 0 ? [fitLine(muted(`hidden: ${hidden.join(', ')}`), width)] : []),
-      fitLine(footer(m, timeZone), width),
+      fitLine(footer(m, timeZone, opts.refreshMs), width),
     ],
   }
 }

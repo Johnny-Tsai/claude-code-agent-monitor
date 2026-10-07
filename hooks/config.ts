@@ -19,6 +19,8 @@ export type Config = {
   collapsedCards: ReadonlySet<string>
   customCardMaxItems: number
   paneMaxRows: number
+  /** How often the pane re-reads dispatches and custom cards while open. */
+  paneRefreshMs: number
 }
 
 /** A card's id: its title in lower case, runs of other characters as one dash. */
@@ -127,6 +129,7 @@ export const parseConfig = (options: RawOptions | undefined): Config => {
     ),
     customCardMaxItems: Math.round(num(o['customCardMaxItems'], 5, 1, 100)),
     paneMaxRows: Math.round(num(o['paneMaxRows'], 44, 10, 500)),
+    paneRefreshMs: Math.round(num(o['paneRefreshSeconds'], 60, 3, 600)) * 1000,
   }
 }
 

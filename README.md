@@ -134,6 +134,7 @@ Options are the plugin's `userConfig` fields. Each one appears as a row in Claud
 | `collapsedCards` | `"session"` | Comma-separated card ids collapsed until you expand them: `inbox`, `running`, `dispatches`, `session`, and each custom card's id. |
 | `customCardMaxItems` | `5` | Most items an expanded custom card lists; the rest fold into one `+N more` line. Clamped to 1 to 100. |
 | `paneMaxRows` | `44` | Rows the pane may use when the surface does not report its height. Clamped to 10 to 500. |
+| `paneRefreshSeconds` | `60` | How often the open pane re-reads dispatches and custom cards, in seconds. Clamped to 3 to 600; the footer shows the period in use. |
 
 Numbers outside their range are clamped rather than rejected. A regular expression that does not compile is matched as plain text instead, so a typo never stops the mod from loading.
 

@@ -104,6 +104,12 @@
       "title": "Pane height (rows)",
       "description": "Rows the pane may use when the surface does not report its height. Past it, expanded cards are shortened first so every card's title stays visible.",
       "default": 44
+    },
+    "paneRefreshSeconds": {
+      "type": "number",
+      "title": "Pane refresh (seconds)",
+      "description": "How often the open pane re-reads dispatches and custom cards. Clamped to 3 to 600.",
+      "default": 60
     }
   }
 }
