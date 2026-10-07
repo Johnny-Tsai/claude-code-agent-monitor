@@ -43,7 +43,7 @@ export type AgentRun = {
   status: string | null
 }
 
-export type CustomMark = 'running' | 'stalled' | 'done' | 'failed' | 'idle' | 'waiting' | 'warn'
+export type CustomMark = 'running' | 'stalled' | 'done' | 'failed' | 'idle' | 'waiting' | 'warn' | 'none'
 
 /** One custom card's last read: the command's JSON, or why it could not be read. */
 export type CustomView = {

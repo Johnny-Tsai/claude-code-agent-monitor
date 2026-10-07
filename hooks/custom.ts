@@ -2,7 +2,7 @@
 import type { CustomMark, CustomView } from '../types'
 import { cut } from './logic'
 
-const MARKS: readonly CustomMark[] = ['running', 'stalled', 'done', 'failed', 'idle', 'waiting', 'warn']
+const MARKS: readonly CustomMark[] = ['running', 'stalled', 'done', 'failed', 'idle', 'waiting', 'warn', 'none']
 export const CUSTOM_ITEM_LIMIT = 30
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

@@ -49,7 +49,13 @@ const SEP: Run = { text: ' · ', tone: 'muted' }
 
 /** A custom item's mark: the status table, plus waiting (gray middle dot, like idle) and warn (yellow dot). */
 export const customMark = (mark: CustomMark): Run =>
-  mark === 'waiting' ? { text: '·', tone: 'muted' } : mark === 'warn' ? { text: '●', tone: 'warn' } : statusMark(mark)
+  mark === 'none'
+    ? { text: ' ', tone: 'plain' }
+    : mark === 'waiting'
+      ? { text: '·', tone: 'muted' }
+      : mark === 'warn'
+        ? { text: '●', tone: 'warn' }
+        : statusMark(mark)
 
 /** The header card: title and clock, the overview, and the restart warning when there is one. */
 const headLines = (m: Model, inner: number, timeZone: string): Line[] => {

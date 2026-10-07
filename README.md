@@ -232,7 +232,7 @@ Expanded, hidden and row settings are kept in the mod's store, so the next sessi
 }
 ```
 
-- `mark` is one of `running`, `stalled`, `done`, `failed`, `idle`, `waiting`, `warn`; anything else shows as `idle`.
+- `mark` is one of `running`, `stalled`, `done`, `failed`, `idle`, `waiting`, `warn`, or `none` (no symbol, for a sub-row under another item); anything else shows as `idle`.
 - `text` and `summary` are cut to 80 characters, `right` to 12, `empty` to 60. At most 30 items are read.
 - When a card shows fewer items than it has, `failed`, `warn` and `stalled` items are listed first; the rest keep the command's order.
 - Text is shown as given, in any language; the mod does not translate it.
